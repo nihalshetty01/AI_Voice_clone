@@ -7,7 +7,9 @@
 #     "pydantic",
 #     "torch",
 #     "torchaudio",
+#     "soundfile",
 #     "transformers<=4.39.3",
+#     "miniaudio",
 # ]
 # ///
 
@@ -72,9 +74,18 @@ class TTSRequest(BaseModel):
 
 def crop_voice_reference():
     """
-    Trims the 4MB MP3 file down to a clean 10-second WAV reference file for faster synthesis.
-    Relies on torchaudio (which is installed as a coqui-tts dependency).
+    Trims the MP3 file down to a clean 10-second WAV reference file for faster synthesis.
+    Uses miniaudio to decode MP3 (which is robust on Windows) and wave to save WAV.
     """
+    # If WAV exists but is actually just a copy of the MP3 file (same size), delete it
+    if os.path.exists(WAV_REF) and os.path.exists(MP3_SOURCE):
+        if os.path.getsize(WAV_REF) == os.path.getsize(MP3_SOURCE):
+            print("[*] Detected fallback MP3 copy at reference path. Deleting it to force a clean WAV crop.")
+            try:
+                os.remove(WAV_REF)
+            except Exception as e:
+                print(f"[!] Warning: failed to delete old fallback: {e}")
+
     if os.path.exists(WAV_REF):
         print(f"[*] Reference voice WAV already exists at: {WAV_REF}")
         return
@@ -85,26 +96,33 @@ def crop_voice_reference():
         return
 
     try:
-        import torchaudio
-        print("[*] Decoding MP3 and slicing first 10 seconds...")
-        # Get metadata
-        info = torchaudio.info(MP3_SOURCE)
-        sample_rate = info.sample_rate
+        import miniaudio
+        import wave
         
-        # Load exactly 10 seconds of audio
-        max_frames = min(10 * sample_rate, info.num_frames)
-        waveform, sr = torchaudio.load(MP3_SOURCE, frame_offset=0, num_frames=max_frames)
+        print("[*] Decoding MP3 using miniaudio...")
+        decoded = miniaudio.decode_file(MP3_SOURCE)
+        print(f"[+] Decoded MP3. Rate: {decoded.sample_rate}Hz, Channels: {decoded.nchannels}, Duration: {decoded.duration:.2f}s")
         
-        # Save as a clean mono/stereo WAV file
-        torchaudio.save(WAV_REF, waveform, sr)
+        # Crop to first 10 seconds
+        target_duration = 10.0
+        sliced_samples = decoded.samples
+        if decoded.duration > target_duration:
+            print(f"[*] Slicing first {target_duration} seconds of audio...")
+            sliced_samples = decoded.samples[:decoded.sample_rate * int(target_duration) * decoded.nchannels]
+            
+        print(f"[*] Saving real WAV file to: {WAV_REF}")
+        with wave.open(WAV_REF, 'wb') as wav_file:
+            wav_file.setnchannels(decoded.nchannels)
+            wav_file.setsampwidth(decoded.sample_width)
+            wav_file.setframerate(decoded.sample_rate)
+            wav_file.writeframes(sliced_samples.tobytes())
+            
         print(f"[+] Successfully saved clean 10s voice clone reference to: {WAV_REF}")
     except Exception as e:
         print(f"[!] Failed to auto-crop voice reference: {e}")
-        print("[!] Falling back to using the raw MP3 file directly as the XTTS reference.")
-        # If cropping fails, copy MP3 or use it directly
+        print("[!] Falling back to copying raw file (synthesis may fail if backend requires WAV).")
         import shutil
         shutil.copy(MP3_SOURCE, WAV_REF)
-        print("[*] Copied source file to fallback destination.")
 
 @app.on_event("startup")
 def startup_event():

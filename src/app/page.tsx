@@ -44,7 +44,7 @@ export default function Home() {
 
   const checkLocalEngine = async () => {
     try {
-      const res = await fetch('http://localhost:5002/api/tts', {
+      const res = await fetch('http://127.0.0.1:5002/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'test', language: 'en' })
@@ -239,7 +239,7 @@ export default function Home() {
 
       try {
         const ttsStart = Date.now();
-        const ttsRes = await fetch('http://localhost:5002/api/tts', {
+        const ttsRes = await fetch('http://127.0.0.1:5002/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: twinText, language: 'en' }),
@@ -341,7 +341,7 @@ export default function Home() {
       let synthesisLatency = 0;
 
       try {
-        const ttsRes = await fetch('http://localhost:5002/api/tts', {
+        const ttsRes = await fetch('http://127.0.0.1:5002/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: twinText, language: 'en' }),
